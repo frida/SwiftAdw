@@ -1,0 +1,7 @@
+.build/
+.swiftpm/
+Packages/
+*.xcodeproj
+*.pdb
+Package.resolved
+.gir2swift-cache/
