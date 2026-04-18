@@ -1,69 +1,7 @@
 // swift-tools-version:5.6
 
-import Foundation
 import PackageDescription
 
-func pkgConfigFlags(_ packages: [String], libs: Bool = false) -> [String] {
-    guard let pc = findOnPath("pkg-config") else { return [] }
-    let proc = Process()
-    proc.executableURL = URL(fileURLWithPath: pc)
-    proc.arguments = (libs ? ["--libs"] : ["--cflags"]) + packages
-    let pipe = Pipe()
-    proc.standardOutput = pipe
-    proc.standardError = FileHandle.nullDevice
-    try? proc.run()
-    proc.waitUntilExit()
-    guard proc.terminationStatus == 0 else { return [] }
-    let data = pipe.fileHandleForReading.readDataToEndOfFile()
-    return String(data: data, encoding: .utf8)?
-        .trimmingCharacters(in: .whitespacesAndNewlines)
-        .split(separator: " ")
-        .map(String.init) ?? []
-}
-
-func findOnPath(_ name: String) -> String? {
-    #if os(Windows)
-    let separator: Character = ";"
-    let extensions = ["", ".exe", ".cmd", ".bat"]
-    let pathSep = "\\"
-    #else
-    let separator: Character = ":"
-    let extensions = [""]
-    let pathSep = "/"
-    #endif
-    let env = ProcessInfo.processInfo.environment
-    guard let pathValue = env["PATH"] ?? env["Path"] else { return nil }
-    for dir in pathValue.split(separator: separator).map(String.init) where !dir.isEmpty {
-        for ext in extensions {
-            let candidate = dir + pathSep + name + ext
-            if FileManager.default.fileExists(atPath: candidate) {
-                return candidate
-            }
-        }
-    }
-    return nil
-}
-
-// SwiftPM's .systemLibrary(pkgConfig:) resolver works on macOS and
-// Linux but doesn't feed cflags to clang on Windows — the CAdw module
-// there ends up without -I paths for adwaita.h. Carry two shapes so
-// each platform gets the path that actually works:
-//
-//  * macOS / Linux: a plain .systemLibrary target that points pkg-config
-//    at libadwaita-1. SwiftPM wires cflags and link args internally.
-//  * Windows: a regular .target with a dummy .c file so we can stuff the
-//    pkg-config output into cSettings/linkerSettings via unsafeFlags,
-//    mirroring the pattern in LumaGtk's CLuma.
-#if os(Windows)
-let cAdwTarget: Target = .target(
-    name: "CAdw",
-    path: "Sources/CAdw",
-    sources: ["adw_bridging.c"],
-    publicHeadersPath: ".",
-    cSettings: [ .unsafeFlags(pkgConfigFlags(["libadwaita-1"])) ],
-    linkerSettings: [ .unsafeFlags(pkgConfigFlags(["libadwaita-1"], libs: true)) ]
-)
-#else
 let cAdwTarget: Target = .systemLibrary(
     name: "CAdw",
     path: "Sources/CAdw",
@@ -73,7 +11,6 @@ let cAdwTarget: Target = .systemLibrary(
         .apt(["libadwaita-1-dev", "libgtk-4-dev", "libglib2.0-dev", "gobject-introspection", "libgirepository1.0-dev"])
     ]
 )
-#endif
 
 let package = Package(
     name: "Adw",
