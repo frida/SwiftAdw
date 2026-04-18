@@ -1,0 +1,4 @@
+module CAdw [system] {
+    header "adw_bridging.h"
+    export *
+}

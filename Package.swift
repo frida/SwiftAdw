@@ -44,8 +44,36 @@ func findOnPath(_ name: String) -> String? {
     return nil
 }
 
-let cAdwFlags = pkgConfigFlags(["libadwaita-1"])
-let cAdwLibs  = pkgConfigFlags(["libadwaita-1"], libs: true)
+// SwiftPM's .systemLibrary(pkgConfig:) resolver works on macOS and
+// Linux but doesn't feed cflags to clang on Windows — the CAdw module
+// there ends up without -I paths for adwaita.h. Carry two shapes so
+// each platform gets the path that actually works:
+//
+//  * macOS / Linux: a plain .systemLibrary target that points pkg-config
+//    at libadwaita-1. SwiftPM wires cflags and link args internally.
+//  * Windows: a regular .target with a dummy .c file so we can stuff the
+//    pkg-config output into cSettings/linkerSettings via unsafeFlags,
+//    mirroring the pattern in LumaGtk's CLuma.
+#if os(Windows)
+let cAdwTarget: Target = .target(
+    name: "CAdw",
+    path: "Sources/CAdw",
+    sources: ["adw_bridging.c"],
+    publicHeadersPath: ".",
+    cSettings: [ .unsafeFlags(pkgConfigFlags(["libadwaita-1"])) ],
+    linkerSettings: [ .unsafeFlags(pkgConfigFlags(["libadwaita-1"], libs: true)) ]
+)
+#else
+let cAdwTarget: Target = .systemLibrary(
+    name: "CAdw",
+    path: "Sources/CAdw",
+    pkgConfig: "libadwaita-1",
+    providers: [
+        .brew(["libadwaita", "gtk4", "glib", "gobject-introspection"]),
+        .apt(["libadwaita-1-dev", "libgtk-4-dev", "libglib2.0-dev", "gobject-introspection", "libgirepository1.0-dev"])
+    ]
+)
+#endif
 
 let package = Package(
     name: "Adw",
@@ -56,14 +84,7 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-docc-plugin", from: "1.0.0"),
     ],
     targets: [
-        .target(
-            name: "CAdw",
-            path: "Sources/CAdw",
-            sources: ["adw_bridging.c"],
-            publicHeadersPath: "include",
-            cSettings: [ .unsafeFlags(cAdwFlags) ],
-            linkerSettings: [ .unsafeFlags(cAdwLibs) ]
-        ),
+        cAdwTarget,
         .target(
             name: "Adw",
             dependencies: [
